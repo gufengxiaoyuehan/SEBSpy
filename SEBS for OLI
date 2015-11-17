@@ -1,0 +1,662 @@
+# _*_ coding: utf-8 -*
+__author__ = 'len'
+
+import arcpy,os,Tkinter,tkFileDialog,tkSimpleDialog,tkMessageBox,string,numpy,math
+from arcpy.sa import *
+from Tkinter import *
+from time import *
+
+# 所有测量值单位均使用国际标准单位
+arcpy.env.workspace = "d:/sebs.gdb"
+arcpy.CheckOutExtension("Spatial")
+arcpy.env.overwriteOutput = True
+arcpy.env.cellSize = "MINOF"
+arcpy.env.snapRsater = "dem"
+
+# 参数设置
+class parameterDialog(tkSimpleDialog.Dialog):
+    def body(self, master):
+        Label(master,text = "大气透射率：").grid(row = 0)
+        Label(master, text = "纬度[十进制角度]：").grid(row = 1)
+        Label(master, text = "一年中第几天：").grid(row = 2)
+        Label(master, text = "过境时间[十进制小时]：").grid(row =3)
+        Label(master, text = "行星边界层高度[米]：").grid(row = 4)
+        Label(master, text = "气象站测高[米]：").grid(row = 5)
+        Label(master , text = "风速[米每秒]：").grid(row = 6)
+        Label(master , text = "气温[摄氏度]：").grid(row = 7)
+        Label(master , text = "气压[帕斯卡]：").grid(row = 8)
+        Label(master , text = "相对湿度：").grid(row = 9)
+        Label(master , text = "大气水汽含量：").grid(row = 10)
+
+        self.e1 = Entry(master)
+        self.e2 = Entry(master)
+        self.e3 = Entry(master)
+        self.e4 = Entry(master)
+        self.e5 = Entry(master)
+        self.e6 = Entry(master)
+        self.e7 = Entry(master)
+        self.e8 = Entry(master)
+        self.e9 = Entry(master)
+        self.e10 = Entry(master)
+        self.e11 = Entry(master)
+
+        self.e1.grid(row = 0 , column = 1)
+        self.e2.grid(row = 1, column = 1)
+        self.e3.grid(row =2 , column = 1)
+        self.e4.grid(row = 3 , column =1)
+        self.e5.grid(row = 4, column = 1)
+        self.e6.grid(row = 5, column = 1)
+        self.e7.grid(row = 6 , column = 1)
+        self.e8.grid(row = 7 , column = 1)
+        self.e9.grid(row =8 , column = 1)
+        self.e10.grid(row = 9 , column = 1)
+        self.e11.grid(row = 10 , column = 1)
+
+        self.e1.insert(0,0.78)
+        self.e2.insert(0,44.58)
+        self.e3.insert(0,122)
+        self.e4.insert(0,13.01)
+        self.e5.insert(0,1000.0)
+        self.e6.insert(0,2.5)
+        self.e7.insert(0,2.41)
+        self.e8.insert(0,27.3)
+        self.e9.insert(0,100000.0)
+        self.e10.insert(0,0.23)
+        self.e11.insert(0,2.35)
+        return self.e1 # 光标定位在e1
+
+    def apply(self):
+        first = float(self.e1.get())
+        second = float(self.e2.get())
+        third = float(self.e3.get())
+        fourth = float(self.e4.get())
+        fifth = float(self.e5.get())
+        sixth = float(self.e6.get())
+        seventh = float(self.e7.get())
+        eight = float(self.e8.get())
+        ninth = float(self.e9.get())
+        tenth = float(self.e10.get())
+        eleven = float(self.e11.get())
+        self.result = first,second,third,fourth,fifth,sixth,seventh,eight,ninth,tenth,eleven
+
+# 选择输入栅格数据
+def guiInputMap(map,default):
+    root = Tkinter.Tk()
+    root.withdraw()
+    question = "选择%s数据" % map
+    selectInputMap = tkFileDialog.askopenfilename(parent = root , title = question,initialfile = default)
+    return selectInputMap
+
+#选择输出栅格数据
+def guiOutputMap(map,default):
+    root = Tkinter.Tk()
+    root.withdraw()
+    question = "保存%s数据" %map
+    selectOutputMap = tkFileDialog.asksaveasfilename(parent = root , title = question , initialfile = default)
+    return  selectOutputMap
+
+# 判断栅格数据数值范围
+def assertWithRange(map,Lower,Upper):
+    minimum = map.minimum
+    maximum = map.maximum
+    assert minimum >= Lower and maximum <= Upper
+
+# 输入栅格文件
+def inputRaster( tittle = "栅格"):
+    root = Tkinter.Tk()
+    root.withdraw()
+    question = '选择要输入的' + tittle + '数据'
+    inputraster = tkFileDialog.askopenfilename(parent =root, title = question,initialdir = r"F:\Landsat Image\LC81440292014122LGN00")
+    return inputraster
+
+
+# 计算栅格数据的中值
+def median(map):
+    map = arcpy.RasterToNumPyArray(map)
+    map = map[map < map.max()]
+    median = numpy.median(map)
+    median = float(median)
+    return median
+
+# 提取遥感影像中的单个波段
+def extractSingleBand(raster):
+    desc = arcpy.Describe(raster)
+    if desc.bandCount == 7:
+        print "Landsat 8 OLI 影像数据"
+        in_rasters = []
+
+        for band in desc.children:
+            bandName = band.name
+            #append each band to the in_rasters list
+            in_rasters.append(os.path.join(raster, bandName))
+
+        band1 = arcpy.Raster(in_rasters[0])
+        band2 = arcpy.Raster(in_rasters[1])
+        band3 = arcpy.Raster(in_rasters[2])
+        band4 = arcpy.Raster(in_rasters[3])
+        band5 = arcpy.Raster(in_rasters[4])
+        band6 = arcpy.Raster(in_rasters[5])
+        band7 = arcpy.Raster(in_rasters[6])
+        return band1,band2,band3,band4,band5,band6,band7
+    elif desc.bandCount == 6:
+        print "Landsat TM/ETM+ 影像数据"
+        in_rasters = []
+        for band in desc.children:
+            bandName = band.name
+            in_rasters.append(os.path.join(raster,bandName))
+        band1 = arcpy.Raster(in_rasters[0])
+        band2 = arcpy.Raster(in_rasters[1])
+        band3 = arcpy.Raster(in_rasters[2])
+        band4 = arcpy.Raster(in_rasters[3])
+        band5 = arcpy.Raster(in_rasters[4])
+        band6 = arcpy.Raster(in_rasters[5])
+        return band1,band2,band3,band4,band5,band6
+    else:
+        print "输入影像栅格不可用"
+        raise
+
+# 将个波段赋予变量名，为了landsat系类卫星的统一计算将landsat 8 则将第一波段赋予band0
+def bandAssignment(rasterdataset):
+     #声明引用全局变量band0-6
+     global band0,band1,band2,band3,band4,band5,band6
+     if len(rasterdataset) == 7:
+         band0,band1,band2,band3,band4,band5,band6 =rasterdataset
+         band0 = band0 *1.0
+     else:
+         band1,band2,band3,band4,band5,band6 =rasterdataset
+# 定义全局变量
+name = locals()
+for i in range(7):
+    name.setdefault("band{}".format(i))
+# 计算短波辐射通量
+def Rswd(DEM,Lat,Trans,DOY,Time):
+    # DEM input Digital Elevation Model
+    # Lat latitude in decimal degress
+    # Trans transmissivity tau(Gates, 1980)
+    # DOY day of year
+    # Time time in hours
+
+    # 所用单位均为弧度制
+    # 常亮
+    pi = 3.1515926
+    Sc = 1366.0 # 太阳常数[w/m2]
+
+    Lat = Lat * pi/180
+
+    SlopMap = Slope(DEM)
+    AspMap = Aspect(DEM)
+    AtmPcor = ((288.0 - 0.0065*DEM)/288.0)**5.256 # 大气压校正
+
+    # 太阳常数
+    Lat = Lat*pi/180
+    HourAng = 15.0*(Time -12.0)*pi/180 # 时角
+    DayAngle = 2*pi*(DOY -1)/365  # 太阳日角
+    SolarDec = (0.006894-0.399512*Cos(DayAngle)+0.072075*Sin(DayAngle)-0.006799*Cos(2*DayAngle)+0.000896*Sin(2*DayAngle)-0.002689*Cos(3*DayAngle)+0.001516*Sin(3*DayAngle)) # 太阳赤纬
+    SolAlt = ASin(Sin(Lat)*Sin(SolarDec)+Cos(Lat)*Cos(SolarDec)*Cos(HourAng))
+    OpCorr = Trans**((SquareRoot(1229.0+(614.0*Sin(SolAlt))**2.0)-614.0*Sin(SolAlt))*AtmPcor) # 大气校正系数
+    Sout = Sc*(1.0 + 0.034*Cos(2*pi*DOY/365.0))
+    Snor = Sout * OpCorr
+    return Snor
+
+# 计算叶面积指数和植被覆盖度
+def fcAndLAI(b3 = band3 , b4 = band4):
+    ndvi = (b4 - b3)/(b4 + b3)# 植被指数
+    ndvi.bandCount # make sure no error throws out
+    #get percentile  5 and 95 value
+    fc = (ndvi - ndvi_5percentile)/(ndvi - ndvi_95percentile) # 植被覆盖度
+    fc = Con(fc>1.0 ,1.0 ,fc)
+    fc = Con(fc<0.0,0.0,fc)
+    LAI = SquareRoot(ndvi*(1+ndvi)/(1.0 + 1.0E-6 -ndvi))
+    LAI = Con(LAI <0.0,0.0,Con(LAI>6.0,6.0,Con(LAI <6.0,LAI)))
+    return ndvi,fc,LAI
+
+# 计算初始NDVI和叶面积指数
+def LAINDVI(NDVI):
+    nd_max = NDVI.maximum
+    nd_min = NDVI.minimum
+    nd_mid = NDVI.mean
+    nd_df  = nd_max - nd_min
+    if nd_df == 0.0:
+        nd_df = 1.0
+    LAI = math.sqrt(nd_min*(1.0 + nd_min)/(1.0 - nd_mid + 1.0E-6))
+    if LAI > 6.0:
+        LAI = 6.0
+    return LAI,nd_max,nd_min,nd_mid,nd_df
+
+# 计算行星边界层风速
+def u_pbl(NDVI):
+    z0m = 0.005 + 0.5*(nd_mid/nd_max)**2.5
+    assert z0m >= 0.0
+    fc = ((nd_mid - nd_min)/nd_df)**2.0
+    assert fc >= 0.0
+    h = z0m/0.136
+    d = 2.0/3.0*h
+    u_c = math.log10((z_pbl -d)/z0m)/math.log10((z_ms -d)/z0m)
+    u_pbl = u_s*u_c
+    return u_pbl,z0m,d,fc,h
+
+#计算初始KB指数值
+def FKB_1(u_zref,zref,h,LAI,Wfol,Ta,pa):
+    # u_zref 参考高度处风速[m/s]
+    # zref 参考高度处高度 [m]
+    # h 冠层高度
+    # LAI 冠层叶面积指数
+    # Wfol 植被覆盖度
+    # Ta 周围环境温度
+    # pa 周围环境压强
+
+    #常量
+    C_d = 0.2 # 叶面拖拽系数
+    C_t = 0.01 # 热传导系数
+    k = 0.41 # Von Karman常数
+    Pr = 0.7 # Prandtl 常数
+    hs = 0.009 # 土壤粗糙度长度
+
+    # 计算
+    Wsoil = 1.0 - Wfol
+    if Wfol == 0.0:
+        h = hs
+    assert Wfol >= 0.0 and Wfol <= 1.0 and Wsoil >= 0.0 and Wsoil <= 1.0
+    z0 = 0.136*h # Brutsaert
+    u_h0 = u_zref*Ln(2.446)/Ln((zref - 0.667*h)/z0) # 冠层风速
+    assert u_h0 >= 0.0
+    ust2u_h = 0.32 - 0.264/Exp(15.1*C_d*LAI)
+    ustarh = ust2u_h*u_h0
+    nu0 = 1.327E-5*(101325.0/pa)*(Ta/273.15)**1.81 # 大气动力学粘度
+    n_h = C_d*LAI/(2.0*ust2u_h**2.0)
+
+    # first term
+    if n_h != 0:
+        F1st = k*C_d/(4.0*C_t*ust2u_h*(1.0-Exp(-1.0*n_h/2.0)))*Wfol**2.0
+    else: F1st = 0.0
+
+    # second term
+    S2nd = k*ust2u_h*0.136*Pr**(2.0/3.0)*SquareRoot(ustarh*hs/nu0)*Wfol**2.0*Wsoil**2.0
+
+    # third term
+    T3rd = (2.46*(u_zref*k/Ln(zref/hs)*hs/nu0)**0.25 - Ln(7.4))*Wsoil**2.0
+
+    return  F1st+S2nd+T3rd
+
+# 计算热传动粗糙度长度
+def z0h(KB_1,z0m):
+    z0h = z0m/Exp(KB_1)
+    return  z0h
+
+# 计算空间KB_1值
+def GKB_1(u_zref,zref,h,LAI,Wfol,Ta,pa):
+    #常量
+    C_d = 0.2
+    C_t = 0.05
+    k = 0.41
+    Pr = 0.7
+    hs = 0.009
+
+    #计算
+    Wsoil = 1.0 - Wfol
+    h = Con(Wfol == 0.0,hs,h)
+    z0 = 0.136*h
+    u_h0 = u_zref*Ln(2.446)/Ln((zref-0.667*h)/z0) # 冠层风速U(h)
+    ust2u_h = 0.32 - 0.264/Exp(15.1*C_d*LAI) # Ustar/U(h)
+    ustarh = ust2u_h*u_h0
+    nu0 = 1.327E-5*(101325.0/pa)*(Ta/273.15)**1.81 # Kinematic viscosity
+    n_h = C_d*LAI/(2.0*ust2u_h**2.0) # Nec 叶阻力系数
+
+    # first term
+    F1st = Con(n_h != 0.0,k*C_d/(4.0*C_t*ust2u_h*(1.0 - Exp(-1.0*n_h/2.0)))*Wfol**2.0,0.0)
+    # second term
+    S2nd = k*ust2u_h*0.136*Pr**(2.0/3.0)*SquareRoot(ustarh*hs/nu0)*Wfol**2.0*Wsoil**2.0
+    # third term
+    T3rd = (2.46*(u_zref*k/Ln(zref/hs)*hs/nu0)**0.25 - Ln(7.4))*Wsoil**2.0
+
+    return F1st+S2nd+T3rd
+
+# 计算地表净辐射通联
+def Rn(Alfa,Rswd,Eair,t_pbl,ems,T):
+    # Alfa 地表反照率
+    # Rswd 向下辐射通量
+    # Eair 空气发射率
+    # t_pbl 行星边界层温度
+    # T 地表温度
+
+    # 常量
+    sigma = 5.678E-8
+
+    # 计算
+    Rn = (1.0 - Alfa)*Rswd + 5.678*ems*(Eair*(t_pbl/100.0)**4.0 - (T/100.0)**4.0)
+    return Rn
+
+# 计算土壤热通量
+def G0(Rn,cover):
+    # cover 地表植被盖度
+
+    # 常量
+    Gamma_c = 0.05 # 全植被覆盖G0/Rn比率
+    Gamma_s = 0.315 # 裸土G0/Rn比率
+
+    # 计算
+    G0 = Rn*(Gamma_c+(1.0-cover)*(Gamma_s-Gamma_c))
+    return G0
+
+# 迭代计算摩擦风速
+def FRUstar(z_pbl,hst):
+    print "开始迭代计算摩擦风速"
+    RUstar = ku/zdm
+    RH = CH*RUstar/zdh
+    RH0 = RH
+    Reps = 10.0
+    Isteps = 0.0
+    RHA = RH
+    RHB = RH
+    RH0A = RH0
+    RH0B = RH0
+    RUstarA = RUstar
+    RUstarB = RUstar
+    IstepsA = Isteps
+    IstepsB = Isteps
+    RepsA = Reps
+    RepsB = Reps
+    itNr = 100.0
+    itThreshold = 0.01
+
+    while RepsA > itThreshold and IstepsA < itNr:
+        RLA = CL*RUstarA**3.0/RHA
+        tempBw = Bw(z_pbl,RLA,z0m)
+        RUstarA = ku/(zdm - tempBw)
+        tempCw = Cw(z_pbl,RLA,z0m,z0h)
+        RHA = CH*RUstarA/(zdh - tempCw)
+        RepsA = Abs(RH0A - RHA).maximum
+        difa = Abs(RH0A - RHA)
+        min = difa.minimum
+        meandif = difa.mean
+        RH0A = RHA
+        IstepsA = IstepsA + 1
+        percentage = (IstepsA/itNr)*100
+        print "BAS迭代进行",int(percentage)
+    print
+
+    while RepsB > itThreshold and IstepsB < itNr:
+        RLB = CL*RUstarB**3.0/RHB
+        tempPSIm_y1 = PSIm_y(zd0/RLB)
+        tempPSIm_y2 = PSIm_y(z0m/RLB)
+        RUstarB = ku/(zdm - tempPSIm_y1 + tempPSIm_y2)
+        tempPSIh_y1 = PSIh_y(zd0/RLB)
+        tempPSIh_y2 = PSIh_y(z0h/RLB)
+        RHB = CH*RUstarB/(zdh-tempPSIh_y1+tempPSIh_y2)
+        RepsB = Abs(RH0B -RHB).maximum
+        difb = Abs(RH0B - RHB)
+        meandif = difb.minimum
+        RH0B = RHB
+        IstepsB = IstepsB + 1
+        percentage = (IstepsB/itNr)*100
+        print "MOS迭代经行",int(percentage)
+    print
+
+    RUstar = Con(z_pbl>=hst,RUstarA,RUstarB)
+    RL = Con(z_pbl >= hst,RLA,RLB)
+    dif = Con(z_pbl >= hst,difa,difb)
+    return RUstar,RL
+
+# MOS稳定度校正系数
+def PSIma(f,g):
+    a = 0.33
+    b = 0.41
+
+    tangens = ATan((2.0*g - 1)/SquareRoot(3.0))
+    PSima = Ln(a + f) - 3.0*b*f**(1.0/3.0) + b*a**(1.0/3.0)/2.0*Ln((1+g)**2.0/(1.0-g+Square(g))) + SquareRoot(3.0)*b*a**(1.0/3.0)*tangens
+    return PSima
+def PSIm_y(Y):
+    # Y = -z/L , z 是高度，L是奥布霍夫长度
+
+    #常量
+    a = 0.33
+    b = 0.41
+    m = 1.0
+    pi = 3.141592654
+
+    # 计算
+    Y = Abs(Y)
+    x = (Y/a)**(1.0/3.0)
+    PSI0 = -1.0*Ln(a) + SquareRoot(3.0)*b*a**(1.0/3.0)*pi/6.0
+    b_3 = b**(-3.0)
+    PSIm_y = Con(Y <= b_3,PSIma(Y,x)+PSI0,PSIma(b_3,((b_3/a)**(1.0/3.0)))+PSI0)
+    return  PSIm_y
+def PSIh_y(Y):
+    # 常量
+    c = 0.33
+    d = 0.057
+    n = 0.78
+
+    # 计算
+    Y = Abs(Y)
+    PSIh_y = (1.0 - d)/n*Ln((c+Y**n)/c)
+    return PSIh_y
+
+# BAS稳定度校正系数
+def Bw(hi,L,z0):
+    # 常量
+    alfa = 0.12
+    beta = 125.0
+
+    # 计算
+    B0 = (alfa/beta)*hi
+    B1 = -1.0*z0/L
+    B11 = -alfa*hi/L
+    B21 = hi/(beta*z0)
+    B22 = -1.0*z0/L
+    tempB11 = PSIm_y(B11)
+    tempB1 = PSIm_y(B1)
+    B = Con(z0<B0,-1.0*Ln(alfa)+PSIm_y(B11)-PSIm_y(B1),Ln(B21)+PSIm_y(B22)-PSIm_y(B1))
+    Bw = Con(B<0.0,0.0,B)
+    return Bw
+def Cw(hi,L,z0,z0h):
+    # 常量
+    alfa = 0.12
+    beta = 125.0
+    C0 = (alfa/beta)*hi
+    C1 = -1.0*z0h/L
+    C11 = -1.0 * alfa*hi/L
+    C21 = hi/(beta*z0)
+    C22 = -1.0*beta*z0/L
+    C = Con(z0<C0,-1.0*Ln(alfa)+PSIh_y(C11)-PSIh_y(C1),Ln(C21)+PSIh_y(C22)-PSIh_y(C1))
+    Cw = Con(C<0.0,0.0,C)
+    return Cw
+
+# -----------------------------------------------------------------------------------
+# Input
+
+DEM = Raster("dem")
+
+# 参数
+root = Tkinter.Tk()
+root.title("请输入SEBS模型所需参数")
+d = parameterDialog(root)
+Trans,Lat,DOY,Time,z_pbl,alt_ms,u_s,t_s,p_s,hr_s,w = d.result
+root.withdraw()
+z_ms = alt_ms
+ndvi_soil = ndvi_5percentile = 0.05 # 部分值0.0637813210487,0.0432680696249,0.0977938771248
+ndvi_vegetable = ndvi_95percentile = 0.85 # 部分值0.843595206738,0.326378554106,0.898405015469
+pi = 3.1415926
+
+#  叶面积指数 和植被覆盖IDU(新疆棉花遥感估产单产模型，刘姣娣，石河子大学，2007，P25-27)
+inAtmCorRaster = inputRaster(tittle="大气校正")
+singleBandList = extractSingleBand(inAtmCorRaster)
+bandAssignment(singleBandList)
+band1 = band1 * 1.0
+band2 = band2 * 1.0
+band3 = band3 * 1.0
+band4 = band4 * 1.0
+band5 = band5 * 1.0
+band6 = band6 * 1.0
+B10 = inputRaster(tittle="B10")
+B11 = inputRaster(tittle = "B11")
+B10 = arcpy.Raster(B10)
+B11 = arcpy.Raster(B11)
+# 利用landsat影像数据计算地表参数
+nd,fc,LAI = fcAndLAI(band3,band4) # 计算叶面积指数
+LSEB10 = 0.971*(1-fc) + 0.987*fc # b10 地表发射率
+LSEB11 = 0.977*(1-fc) + 0.989*fc # b11 地表发射率
+ems = 0.5*(LSEB10 + LSEB11)
+T = B10 + 1.378*(B10 -B11)+ 0.183*(B10 - B11)**2 -0.268 + (54.300 - 2.238*w)*(1.0-0.5*(LSEB10+LSEB11))+ (-129.200+16.400*w)*(LSEB10 - LSEB11) # 劈窗算法计算地表温度
+albedo =0.356*band1*0.0001+0.13*band3*0.0001+0.373*band4*0.0001+0.085*band5*0.0001+0.072*band6*0.0001-0.0018
+# 数据范围校正
+albedo = Con(albedo>1.0,1.0,albedo)
+albedo = Con(albedo<0.0,0.0,albedo)
+ems = Con(ems>1.0,1.0,ems)
+ems = Con(ems<0.0,0.0,ems)
+
+
+
+print "模型初始化参数计算"
+
+# 设置开始时间
+startime = time()
+# 检查输入变量
+nd = Con(nd>1.0,1.0,nd)
+nd = Con(nd<0.0, 0.0 , nd)
+assertWithRange(nd,0.0,1.0)
+assert DEM.maximum >= 0.0
+assert T.minimum > 0.0
+assert DOY >= 0.0 and DOY <= 366
+assert Time >= 0.0 and Time <= 24.0
+assert alt_ms >= 0.0
+assert u_s >= 0.0
+assert hr_s >= 0.0 and hr_s <= 1.0
+assert z_pbl >= 0.0
+albedo = Con(albedo>1.0,1.0,albedo)
+albedo = Con(albedo<0.0,0.0,albedo)
+assertWithRange(albedo,0.0,1.0)
+ems = Con(ems>1.0,1.0,ems)
+ems = Con(ems<0.0,0.0,ems)
+assertWithRange(ems,0.0,1.0)
+
+# 初始化模型
+# 计算初始叶面积指数
+LAINDVI = LAINDVI(nd)
+LAI = LAINDVI[0]
+nd_max = LAINDVI[1]
+nd_min = LAINDVI[2]
+nd_mid = LAINDVI[3]
+nd_df = LAINDVI[4]
+# 计算初始行星边界层参数
+Fu_pbl = u_pbl(nd)
+u_pbl = Fu_pbl[0]
+assert u_pbl > 0.0
+z0m = Fu_pbl[1]
+d = Fu_pbl[2]
+fc = Fu_pbl[3]
+h = Fu_pbl[4]
+
+# 计算初始KB_1和热传导粗糙度长度
+KB_1 = FKB_1(u_pbl,z_pbl,h,LAI,fc,t_s,p_s)
+z0h = z0h(KB_1,z0m)
+print "z0m",type(z0m),z0m,"z0h",type(z0h),z0h,"h",type(h),h,"LAI",type(LAI),LAI,"d",type(d),d,"fc",type(fc),fc,"u_pbl",type(u_pbl),u_pbl,"nd_max",type(nd_max),nd_max,"nd_min",type(nd_min),nd_min,"nd_mid",type(nd_mid),nd_mid
+
+# 计算初始温度和压力
+t_c = Ln((z_pbl-d)/z0h)/Ln((alt_ms-d)/z0h)
+t_s = t_s + 273.15
+t_pbl_A = T*(1.0-t_c)+t_s*t_c
+p_s_A = p_s*((44331.0 - DEM)/(44331.0 - alt_ms))**(1.0/0.1903) # 地表大气压力
+z_pbl_A = z_pbl
+p_pbl_A = p_s*((44331.0 - (DEM + z_pbl_A))/(44331.0 - alt_ms))**(1.0/0.1903) # 行星边界层大气压力
+T0 = T/(1.0 - DEM/44331.0)**1.5029 # 地表位温
+t_pbl_A = t_pbl_A/(1.0 - DEM/44331.0)**1.5029 # 行星边界层位温
+T_0pbl = 0.5*(t_pbl_A+T0) # 平均位温温度
+Tcn = T_0pbl - 273.15 # 卡尔文温度转摄氏度平均大气位温
+esat = 611.0*Exp(17.502*Tcn/(Tcn+240.97)) # 饱和水汽压
+hr_pbl = hr_s # 相对湿度
+eact = hr_pbl*esat.mean # 实际水汽压
+q_pbl_A = 5.0/8.0 * eact/p_pbl_A # 比湿 5.0/8.0 = 0.622
+z_pbl = z_pbl_A # 符号转换，行星边界层高度
+ps = p_s_A # 符号转换，地表大气压力
+Ta = T_0pbl - 273.15 # 大气平均位温转摄氏度单位
+t_pbl = t_pbl_A # 符号转换，行星边界层位温
+LAI = SquareRoot(nd*(1.0+nd)/(1.0+1.0E-6-nd)) # 叶面积指数，空间数据
+LAI = Con(LAI>6.0,6.0,LAI)
+LAI = Con(LAI<0.0 , 0.0,LAI) # 调整范围
+fc = ((nd-nd.minimum)/nd_df)**2.0
+assertWithRange(fc,0.0,1.0)
+p_pbl = p_pbl_A # 符号转换，行星边界层大气压力
+q_pbl = q_pbl_A # 符号转换，比湿
+z0m = 0.005 + 0.5*(nd/nd.maximum)**2.5 # 动量粗糙度长度
+d = z0m*4.9 # 零平面位移
+h = z0m/0.136 # 植被高度
+KB_1 = GKB_1(u_pbl,z_pbl,h,LAI,fc,Ta,p_pbl) # KB指数
+z0h = z0m/Exp(KB_1) # 热传导粗糙度高度
+Tsk = T # 地表温度
+Theta_s = T0 # 地表位温
+Theta_v = Tsk*(1.0 + 0.61*q_pbl) # 地表虚温
+Theta_a = t_pbl*(101325.0/p_pbl)**0.286 # 行星边界层位温
+T0ta = Theta_s - Theta_a # 地表位温与空气位温之差
+Rv = 461.05 # 水蒸气比气体常数
+Rd = 287.04 # 干空气比气体常数
+Cp = 1005.0 # 比热
+eact = p_pbl*q_pbl*(Rv/Rd) # 行星边界层实际水汽压
+rhoa = ps/(Rd*Theta_v) # 地表空气密度
+rhoam = (ps/(Rd*Tsk))*(1.0-0.378*eact/ps) # 湿空气密度
+rhoacp = rhoa*Cp # 空气比热容
+alfa = 0.12
+beta = 125.0
+g = 9.81 # 重力加速度
+k = 0.41
+hst = max((alfa*z_pbl),(beta*z0m.maximum)) # 大气边界层高度[m]
+# 构建迭代公式
+zd0 = z_pbl -d
+ku = k*u_pbl
+zdm = Ln(zd0/z0m)
+zdh = Ln(zd0/z0h)
+CH = T0ta * k * rhoacp
+CL = -1.0*rhoam*Cp*Theta_v/(k*g)
+
+# 计算能量平衡
+print "计算能量平衡项······"
+print "计算净辐射通量······"
+Rswd = Rswd(DEM,LAI,Trans,DOY,Time)
+Eair = 9.2*(t_pbl/1000.0)**2.0 # 大气有效辐射率
+Rn = Rn(albedo,Rswd,Eair,t_pbl,ems,T)
+Rn.save("Rn")
+print "计算土壤热通量·····"
+G0 = G0(Rn,fc)
+G0.save('G0')
+R_G = Rn - G0
+# 计算干限
+H_d = R_G
+FRUstar = FRUstar(z_pbl,hst)
+RUstar = FRUstar[0] # 摩擦风速
+RL = FRUstar[1] # 奥布霍夫稳定度长度
+print "计算湿限·····"
+L_e = 2.430E6 # 汽化潜热 [J/Kg]
+L_w = -1.0*RUstar**3.0*rhoam/(0.61*k*g*R_G/L_e) # 湿限阻抗
+C_wet = Con(z_pbl>=hst,Cw(z_pbl,L_w,z0m,z0h),PSIh_y(-1.0*z_pbl/L_w)) # 根据高度选择合适的校正系数
+re_w = (zdh-C_wet)/(k*RUstar) #湿限外部阻抗
+re_w = Con(re_w<=0.0,zdh/(k*RUstar),re_w)
+slopef = 17.502*240.97*esat/(Ta + 240.97)**2.0 # 饱和水气压随温度变化率
+gamma = 67.0 # 湿度计常数
+H_w = (R_G-(rhoacp/re_w)*((esat -eact)/gamma))/(1.0+slopef/gamma) # 湿限感热
+LEwet = Rn-G0-H_w # 湿限潜热
+print "计算感热通量"
+C_i = Con(z_pbl>hst,Cw(z_pbl,RL,z0m,z0h),PSIh_y(-1.0*z_pbl/RL))
+re_i = (zdh-C_i)/(k*RUstar)
+H_i = rhoacp*T0ta/re_i
+H_i = Con(H_i>H_d,H_d,H_i)
+H_i = Con(H_i<H_w,H_w,H_i)
+H_i.save("H")
+print "计算相对蒸散和蒸发比"
+# 计算相对蒸发
+ev_r = 1.0 - (H_i-H_w)/(H_d-H_w)
+ev_r.save("相对蒸散")
+# 计算蒸发比
+Evapfr = ev_r*(1.0-H_w/H_d)
+Evapfr.save("蒸散比")
+# 计算潜热通量
+labdaE = Evapfr*(Rn-G0)
+labdaE.save("潜热通量")
+print "计算蒸散发量"
+rhow = 998.0 # 水的密度
+E = labdaE/(L_e*rhow) # [m/s]
+E.save("瞬时蒸散发量")
+Ehour = E*3600*1000 # mm/h
+Ehour.save("一小时蒸散发量")
+endtime = time()
+deltatime = endtime - startime
+print "模型共运行%5.2f秒" % deltatime
